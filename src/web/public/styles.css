@@ -2080,6 +2080,70 @@ body {
   text-align: center;
 }
 
+/* History sessions panel */
+.history-sessions {
+  margin-top: 1.5rem;
+  width: 100%;
+  max-width: 560px;
+}
+
+.history-title {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: left;
+}
+
+.history-item:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.history-item-dir {
+  flex: 1;
+  font-size: 0.8rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.history-item-size {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  min-width: 45px;
+  text-align: right;
+}
+
 .welcome-hint {
   color: var(--text-muted);
   font-size: 0.8rem;
