@@ -1,5 +1,33 @@
 # aicodeman
 
+## 0.3.11
+
+### Patch Changes
+
+- ### Session Resume & History
+  - Add `resumeSessionId` support for conversation resume after reboot
+  - Add history session resume UI and API with route shell sessions routing fix
+  - Improve session resume reliability and persist user settings across refresh
+  - Correct `claudeSessionId` for resumed sessions
+
+  ### Terminal & Frontend
+  - Upgrade xterm.js 5.3 → 6.0 with native DEC 2026 synchronized output
+  - Increase terminal scrollback from 5,000 to 20,000 lines
+  - Reduce default font size and persist tab state across refresh
+  - Resolve terminal resize scrollback ghost renders
+  - Hide subagent monitor panel by default
+
+  ### Installer
+  - Auto-detect existing install and run update instead of fresh install
+  - Auto-restart codeman-web service after update if running
+  - Show restart command when codeman-web is not a systemd service
+  - Fix one-liner restart command for background processes
+
+  ### Codebase Quality
+  - Remove dead code, consolidate imports, extract constants
+  - Repair 15 pre-existing subagent-watcher test failures
+  - Clean up DEC sync dead code
+
 ## 0.3.10
 
 ### Patch Changes
