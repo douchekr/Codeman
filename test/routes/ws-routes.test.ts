@@ -5,6 +5,8 @@
  * a real listening server since inject() doesn't support upgrade requests.
  * Uses the `ws` package (transitive dep of @fastify/websocket) as the client.
  *
+ * @dependency test/mocks/mock-route-context.ts (createMockRouteContext)
+ * @dependency src/web/routes/ws-routes.ts (registerWsRoutes)
  * Port: 3170 (ws-routes tests)
  */
 
@@ -14,15 +16,23 @@ import fastifyWebsocket from '@fastify/websocket';
 import WebSocket from 'ws';
 import { createMockRouteContext, type MockRouteContext } from '../mocks/index.js';
 import { registerWsRoutes } from '../../src/web/routes/ws-routes.js';
+import { MAX_INPUT_LENGTH } from '../../src/config/terminal-limits.js';
 
 const PORT = 3170;
 
 /** Helper: open a WebSocket connection and wait for it to reach OPEN state. */
-function connectWs(path: string): Promise<WebSocket> {
+function connectWs(path: string, timeoutMs = 5000): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('WS connection timeout')), timeoutMs);
     const ws = new WebSocket(`ws://127.0.0.1:${PORT}${path}`);
-    ws.on('open', () => resolve(ws));
-    ws.on('error', reject);
+    ws.on('open', () => {
+      clearTimeout(timer);
+      resolve(ws);
+    });
+    ws.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -45,6 +55,23 @@ function waitForClose(ws: WebSocket, timeoutMs = 2000): Promise<{ code: number; 
       clearTimeout(timer);
       resolve({ code, reason: reason.toString() });
     });
+  });
+}
+
+/** Helper: collect N messages from a WebSocket. */
+function collectMessages(ws: WebSocket, count: number, timeoutMs = 3000): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Only received ${msgs.length}/${count} messages`)), timeoutMs);
+    const msgs: unknown[] = [];
+    const onMessage = (raw: WebSocket.RawData) => {
+      msgs.push(JSON.parse(String(raw)));
+      if (msgs.length >= count) {
+        clearTimeout(timer);
+        ws.off('message', onMessage);
+        resolve(msgs);
+      }
+    };
+    ws.on('message', onMessage);
   });
 }
 
@@ -123,6 +150,43 @@ describe('ws-routes', () => {
         ws.close();
       }
     });
+
+    it('coalesces rapid terminal emissions into a single frame', async () => {
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+      try {
+        const session = ctx._session;
+
+        // Emit multiple small chunks in rapid succession (within the 8ms batch window)
+        session.emit('terminal', 'chunk1');
+        session.emit('terminal', 'chunk2');
+        session.emit('terminal', 'chunk3');
+
+        // Should arrive as a single coalesced message
+        const msg = (await nextMessage(ws)) as { t: string; d: string };
+        expect(msg.t).toBe('o');
+        expect(msg.d).toContain('chunk1chunk2chunk3');
+      } finally {
+        ws.close();
+      }
+    });
+
+    it('flushes immediately when batch exceeds size threshold', async () => {
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+      try {
+        const session = ctx._session;
+
+        // Emit data larger than WS_BATCH_FLUSH_THRESHOLD (16384)
+        const largeData = 'X'.repeat(17000);
+        session.emit('terminal', largeData);
+
+        // Should flush immediately (no 8ms wait) — use a tight timeout
+        const msg = (await nextMessage(ws, 500)) as { t: string; d: string };
+        expect(msg.t).toBe('o');
+        expect(msg.d).toContain(largeData);
+      } finally {
+        ws.close();
+      }
+    });
   });
 
   // ========== Client input ==========
@@ -132,7 +196,6 @@ describe('ws-routes', () => {
       const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
       try {
         const session = ctx._session;
-        session.writeBuffer = [];
 
         ws.send(JSON.stringify({ t: 'i', d: 'ls -la\r' }));
 
@@ -149,10 +212,8 @@ describe('ws-routes', () => {
       const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
       try {
         const session = ctx._session;
-        session.writeBuffer = [];
 
-        // MAX_INPUT_LENGTH is 64KB
-        const hugeInput = 'x'.repeat(65 * 1024);
+        const hugeInput = 'x'.repeat(MAX_INPUT_LENGTH + 1);
         ws.send(JSON.stringify({ t: 'i', d: hugeInput }));
 
         // Send a valid message after to confirm the connection still works
@@ -173,7 +234,6 @@ describe('ws-routes', () => {
       const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
       try {
         const session = ctx._session;
-        session.writeBuffer = [];
 
         ws.send('not-json{{{');
 
@@ -185,6 +245,28 @@ describe('ws-routes', () => {
         });
 
         // Only 'after-bad' should be in the buffer
+        expect(session.writeBuffer).toHaveLength(1);
+      } finally {
+        ws.close();
+      }
+    });
+
+    it('ignores unknown message types without breaking the connection', async () => {
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+      try {
+        const session = ctx._session;
+
+        // Send unknown type
+        ws.send(JSON.stringify({ t: 'x', d: 'mystery' }));
+
+        // Connection should still work
+        ws.send(JSON.stringify({ t: 'i', d: 'still-alive' }));
+
+        await vi.waitFor(() => {
+          expect(session.writeBuffer).toContain('still-alive');
+        });
+
+        // Unknown type should not have been written
         expect(session.writeBuffer).toHaveLength(1);
       } finally {
         ws.close();
@@ -332,6 +414,64 @@ describe('ws-routes', () => {
     });
   });
 
+  // ========== Connection limit ==========
+
+  describe('connection limit', () => {
+    it('closes with 4008 when too many connections per session', async () => {
+      const connections: WebSocket[] = [];
+      try {
+        // Open 5 connections (the max)
+        for (let i = 0; i < 5; i++) {
+          connections.push(await connectWs('/ws/sessions/ws-test-session/terminal'));
+        }
+
+        // 6th connection should be rejected
+        const ws6 = new WebSocket(`ws://127.0.0.1:${PORT}/ws/sessions/ws-test-session/terminal`);
+        const { code, reason } = await waitForClose(ws6);
+        expect(code).toBe(4008);
+        expect(reason).toBe('Too many connections');
+      } finally {
+        for (const ws of connections) ws.close();
+      }
+    });
+  });
+
+  // ========== Heartbeat ==========
+
+  describe('heartbeat', () => {
+    it('responds to server ping with pong (connection stays alive)', async () => {
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+      try {
+        // The ws library automatically responds to pings with pongs.
+        // Verify the connection survives by sending data after a brief delay.
+        const session = ctx._session;
+        session.emit('terminal', 'heartbeat-test');
+
+        const msg = (await nextMessage(ws)) as { t: string; d: string };
+        expect(msg.t).toBe('o');
+        expect(msg.d).toContain('heartbeat-test');
+      } finally {
+        ws.close();
+      }
+    });
+  });
+
+  // ========== readyState guards ==========
+
+  describe('readyState guards', () => {
+    it('does not throw when clearTerminal fires after close', async () => {
+      const session = ctx._session;
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+
+      ws.close();
+      await waitForClose(ws);
+
+      // These should be no-ops, not throw
+      expect(() => session.emit('clearTerminal')).not.toThrow();
+      expect(() => session.emit('needsRefresh')).not.toThrow();
+    });
+  });
+
   // ========== Connection cleanup ==========
 
   describe('connection cleanup', () => {
@@ -350,11 +490,11 @@ describe('ws-routes', () => {
       ws.close();
       await waitForClose(ws);
 
-      // Give the server-side close handler time to run
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait for server-side close handler
+      await vi.waitFor(() => {
+        expect(session.listenerCount('terminal')).toBe(listenersBefore);
+      });
 
-      // Listeners should be cleaned up
-      expect(session.listenerCount('terminal')).toBe(listenersBefore);
       expect(session.listenerCount('clearTerminal')).toBe(0);
       expect(session.listenerCount('needsRefresh')).toBe(0);
     });

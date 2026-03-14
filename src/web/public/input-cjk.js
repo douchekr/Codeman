@@ -7,14 +7,20 @@
  * While this textarea has focus, window.cjkActive = true blocks xterm's onData.
  * Arrow keys and function keys are forwarded to PTY directly.
  *
- * @globals {object} CjkInput
- * @loadorder 5.5 of 9 — loaded after keyboard-accessory.js, before app.js
+ * @dependency index.html (#cjkInput textarea)
+ * @globals {object} CjkInput — window.cjkActive (boolean) signals app.js to block xterm onData
+ * @loadorder 5.5 of 10 — loaded after keyboard-accessory.js, before app.js
  */
 
 // eslint-disable-next-line no-unused-vars
 const CjkInput = (() => {
   let _textarea = null;
   let _send = null;
+  let _initialized = false;
+  let _onMousedown = null;
+  let _onFocus = null;
+  let _onBlur = null;
+  let _onKeydown = null;
 
   const PASSTHROUGH_KEYS = {
     ArrowUp:    '\x1b[A',
@@ -32,15 +38,21 @@ const CjkInput = (() => {
 
   return {
     init({ send }) {
+      // Guard against double-init: remove previous listeners
+      if (_initialized) this.destroy();
+
       _send = send;
       _textarea = document.getElementById('cjkInput');
       if (!_textarea) return this;
 
-      _textarea.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-      _textarea.addEventListener('focus', () => { window.cjkActive = true; });
-      _textarea.addEventListener('blur', () => { window.cjkActive = false; });
+      _onMousedown = (e) => { e.stopPropagation(); };
+      _onFocus = () => { window.cjkActive = true; };
+      _onBlur = () => { window.cjkActive = false; };
+      _textarea.addEventListener('mousedown', _onMousedown);
+      _textarea.addEventListener('focus', _onFocus);
+      _textarea.addEventListener('blur', _onBlur);
 
-      _textarea.addEventListener('keydown', (e) => {
+      _onKeydown = (e) => {
         if (e.isComposing || e.keyCode === 229) return;
 
         // Enter: send accumulated text (or bare Enter if empty)
@@ -82,9 +94,23 @@ const CjkInput = (() => {
           _send(PASSTHROUGH_KEYS[e.key]);
           return;
         }
-      });
+      };
+      _textarea.addEventListener('keydown', _onKeydown);
 
+      _initialized = true;
       return this;
+    },
+
+    destroy() {
+      if (_textarea) {
+        if (_onMousedown) _textarea.removeEventListener('mousedown', _onMousedown);
+        if (_onFocus) _textarea.removeEventListener('focus', _onFocus);
+        if (_onBlur) _textarea.removeEventListener('blur', _onBlur);
+        if (_onKeydown) _textarea.removeEventListener('keydown', _onKeydown);
+      }
+      window.cjkActive = false;
+      _onMousedown = _onFocus = _onBlur = _onKeydown = null;
+      _initialized = false;
     },
 
     get element() { return _textarea; },

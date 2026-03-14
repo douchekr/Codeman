@@ -52,6 +52,12 @@ const WS_PONG_TIMEOUT_MS = 10_000;
 const DEC_2026_START = '\x1b[?2026h';
 const DEC_2026_END = '\x1b[?2026l';
 
+/** Max concurrent WS connections per session. Prevents listener/bandwidth multiplication. */
+const MAX_WS_PER_SESSION = 5;
+
+/** Track active WS connections per session for connection limiting. */
+const sessionWsCount = new Map<string, number>();
+
 export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort): void {
   app.get<{ Params: { id: string } }>('/ws/sessions/:id/terminal', { websocket: true }, (socket: WebSocket, req) => {
     const { id } = req.params;
@@ -61,6 +67,17 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort): void {
       socket.close(4004, 'Session not found');
       return;
     }
+
+    // Enforce per-session connection limit
+    const currentCount = sessionWsCount.get(id) ?? 0;
+    if (currentCount >= MAX_WS_PER_SESSION) {
+      socket.close(4008, 'Too many connections');
+      return;
+    }
+    sessionWsCount.set(id, currentCount + 1);
+
+    // Swallow socket errors — cleanup happens in 'close'
+    socket.on('error', () => {});
 
     // Per-connection micro-batch state
     let batchChunks: string[] = [];
@@ -174,6 +191,14 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort): void {
       session.off('terminal', onTerminal);
       session.off('clearTerminal', onClearTerminal);
       session.off('needsRefresh', onNeedsRefresh);
+
+      // Decrement per-session connection count
+      const count = sessionWsCount.get(id) ?? 1;
+      if (count <= 1) {
+        sessionWsCount.delete(id);
+      } else {
+        sessionWsCount.set(id, count - 1);
+      }
     });
   });
 }

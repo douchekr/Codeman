@@ -233,7 +233,8 @@
     <main class="main">
       <div class="terminal-wrap">
         <div class="terminal-container" id="terminalContainer"></div>
-        <textarea id="cjkInput" rows="1" placeholder="CJK 입력 → Enter 전송 / ESC 취소"
+        <textarea id="cjkInput" rows="1" placeholder="CJK input (Enter = send, Esc = clear)"
+          maxlength="65536" aria-label="CJK IME input field"
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
       </div>
 

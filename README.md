@@ -45,7 +45,10 @@ The installer supports these environment variables:
 | `CODEMAN_BRANCH` | `master` | Git branch to install |
 | `CODEMAN_INSTALL_DIR` | `~/.codeman/app` | Custom install directory |
 | `CODEMAN_SKIP_SYSTEMD` | `0` | Skip systemd service setup prompt |
-| `CODEMAN_NONINTERACTIVE` | `0` | Skip all prompts (for CI/automation) | You'll need at least one AI coding CLI installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) (or both). After install:
+| `CODEMAN_NODE_VERSION` | `22` | Node.js major version to install |
+| `CODEMAN_NONINTERACTIVE` | `0` | Skip all prompts (for CI/automation) |
+
+You'll need at least one AI coding CLI installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) (or both). After install:
 
 ```bash
 codeman web

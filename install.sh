@@ -1281,8 +1281,9 @@ update() {
 
     info "Updating Codeman..."
     cd "$INSTALL_DIR"
+    git remote set-url origin "$REPO_URL" 2>/dev/null || true
     git fetch --quiet origin
-    git reset --hard origin/master --quiet
+    git reset --hard "origin/$BRANCH" --quiet
     npm install --quiet --no-fund --no-audit 2>/dev/null || npm install --no-fund --no-audit
     npm run build --quiet 2>/dev/null || npm run build
     success "Updated to $(node -e "console.log(require('./package.json').version)")"

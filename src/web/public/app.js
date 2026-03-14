@@ -3083,7 +3083,10 @@ class CodemanApp {
 
     // CJK input form: show/hide based on server env INPUT_CJK_FORM=ON
     const cjkEl = document.getElementById('cjkInput');
-    if (cjkEl) cjkEl.style.display = data.inputCjkForm ? 'block' : 'none';
+    if (cjkEl) {
+      cjkEl.style.display = data.inputCjkForm ? 'block' : 'none';
+      if (!data.inputCjkForm) window.cjkActive = false;
+    }
 
     // Update version displays (header and toolbar)
     if (data.version) {
