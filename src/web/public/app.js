@@ -1524,8 +1524,8 @@ class CodemanApp {
       if (!this.writeFrameScheduled) {
         this.writeFrameScheduled = true;
         requestAnimationFrame(() => {
-          this.flushPendingWrites();
           this.writeFrameScheduled = false;
+          this.flushPendingWrites();
         });
       }
     }
