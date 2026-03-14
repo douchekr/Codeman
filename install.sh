@@ -1065,13 +1065,14 @@ main() {
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         info "Existing installation found, updating..."
         cd "$INSTALL_DIR"
+        git remote set-url origin "$REPO_URL" 2>/dev/null || true
 
         # Check for local changes
         if ! git diff --quiet 2>/dev/null || ! git diff --staged --quiet 2>/dev/null; then
             warn "Local changes detected in $INSTALL_DIR"
             if prompt_yes_no "Discard local changes and update?" "n"; then
                 git fetch --quiet origin
-                git reset --hard origin/master --quiet
+                git reset --hard "origin/$BRANCH" --quiet
             else
                 info "Keeping existing installation, skipping update"
             fi
